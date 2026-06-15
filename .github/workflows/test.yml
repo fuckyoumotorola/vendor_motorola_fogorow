@@ -1,0 +1,94 @@
+name: Import vendor from release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-vendor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config core.compression 0
+          git config lfs.concurrenttransfers 16
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip git-lfs
+          git lfs install
+
+      - name: Download release zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/vendor-release
+
+          TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
+
+          echo "Using release tag: $TAG"
+
+          gh release download "$TAG" \
+            --pattern "*.zip" \
+            --dir /tmp/vendor-release
+
+          ZIP="$(find /tmp/vendor-release -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+
+          if [ -z "$ZIP" ]; then
+            echo "No zip asset found in release."
+            exit 1
+          fi
+
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Extract vendor
+        run: |
+          rm -rf /tmp/vendor-extracted
+          mkdir -p /tmp/vendor-extracted
+
+          unzip -q "$ZIP" -d /tmp/vendor-extracted
+
+          rm -rf vendor/motorola/fogorow
+          mkdir -p vendor/motorola/fogorow
+
+          shopt -s dotglob
+
+          if [ -d /tmp/vendor-extracted/fogorow ]; then
+            cp -a /tmp/vendor-extracted/fogorow/* vendor/motorola/fogorow/
+          elif [ -d /tmp/vendor-extracted/android_vendor_motorola_fogorow ]; then
+            cp -a /tmp/vendor-extracted/android_vendor_motorola_fogorow/* vendor/motorola/fogorow/
+          else
+            cp -a /tmp/vendor-extracted/* vendor/motorola/fogorow/
+          fi
+
+          ls -lah vendor/motorola/fogorow
+
+      - name: Track vendor with Git LFS
+        run: |
+          git lfs track "vendor/motorola/fogorow/**"
+          git add .gitattributes
+
+      - name: Commit and push
+        run: |
+          git add vendor/motorola/fogorow
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Import fogorow vendor blobs"
+          git push origin main
