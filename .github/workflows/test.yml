@@ -1,4 +1,4 @@
-name: Import vendor from release
+name: Flatten vendor tree
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 jobs:
-  import-vendor:
+  flatten:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,72 +23,44 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config core.compression 0
-          git config lfs.concurrenttransfers 16
 
-      - name: Install tools
+      - name: Move vendor files to repository root
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip git-lfs
-          git lfs install
+          set -e
 
-      - name: Download release zip
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p /tmp/vendor-release
+          SRC="vendor/motorola/fogorow"
 
-          TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
-
-          echo "Using release tag: $TAG"
-
-          gh release download "$TAG" \
-            --pattern "*.zip" \
-            --dir /tmp/vendor-release
-
-          ZIP="$(find /tmp/vendor-release -maxdepth 1 -type f -name '*.zip' | head -n 1)"
-
-          if [ -z "$ZIP" ]; then
-            echo "No zip asset found in release."
+          if [ ! -d "$SRC" ]; then
+            echo "Source folder not found: $SRC"
             exit 1
           fi
 
-          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          shopt -s dotglob nullglob
 
-      - name: Extract vendor
-        run: |
-          rm -rf /tmp/vendor-extracted
-          mkdir -p /tmp/vendor-extracted
+          for item in "$SRC"/*; do
+            name="$(basename "$item")"
 
-          unzip -q "$ZIP" -d /tmp/vendor-extracted
+            if [ -e "$name" ]; then
+              rm -rf "$name"
+            fi
 
-          rm -rf vendor/motorola/fogorow
-          mkdir -p vendor/motorola/fogorow
+            mv "$item" "$name"
+          done
 
-          shopt -s dotglob
+          rm -rf vendor
 
-          if [ -d /tmp/vendor-extracted/fogorow ]; then
-            cp -a /tmp/vendor-extracted/fogorow/* vendor/motorola/fogorow/
-          elif [ -d /tmp/vendor-extracted/android_vendor_motorola_fogorow ]; then
-            cp -a /tmp/vendor-extracted/android_vendor_motorola_fogorow/* vendor/motorola/fogorow/
-          else
-            cp -a /tmp/vendor-extracted/* vendor/motorola/fogorow/
-          fi
-
-          ls -lah vendor/motorola/fogorow
-
-      - name: Track vendor with Git LFS
-        run: |
-          git lfs track "vendor/motorola/fogorow/**"
-          git add .gitattributes
+          rm -f .gitattributes
+          rm -f .gitignore
 
       - name: Commit and push
         run: |
-          git add vendor/motorola/fogorow
+          git add -A
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "Import fogorow vendor blobs"
+          git commit -m "Flatten vendor tree"
           git push origin main
