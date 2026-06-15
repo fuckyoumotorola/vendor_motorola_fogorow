@@ -1,0 +1,41 @@
+#TN Begin modify by linhong.han/860549 20231206 CR/EKFOGO4G-9172
+service tn_checksum_elabel /vendor/bin/tn_checksum_elabel.sh
+   user system
+   group root system
+   disabled
+#TN End modify by linhong.han/860549 20231206 CR/EKFOGO4G-9172
+
+service tlcKeyboxSample /vendor/bin/tlcKeyboxSample
+    user system
+    group system
+    oneshot
+
+#on post-fs-data
+on property:vendor.attestation.rewrite=1
+    start tlcKeyboxSample
+
+#TN Begin modify for mount /mnt/vendor/elabel/regulatory_info.png by yang.chen/860621 20230901 CR/EKFOGO4G-1375
+on boot
+   chown system system /mnt/elabel/regulatory_info.png
+   chmod 0664 /mnt/elabel/regulatory_info.png
+
+   restorecon_recursive /mnt/elabel
+
+#TN End modify for mount /mnt/vendor/elabel/regulatory_info.png by yang.chen/860621 20230901 CR/EKFOGO4G-1375
+#TN modified by bingtai.zou/860558 20230908 EKFOGO4G-1867 BEGIN
+    chown system root /sys/bus/i2c/drivers/awinic_sar/3-0012/aot
+#TN modified by bingtai.zou/860558 20230908 EKFOGO4G-1867 END
+
+#TN Begin modify by linhong.han/860549 20231206 CR/EKFOGO4G-9172
+    start tn_checksum_elabel
+
+on property:persist.vendor.elabel.stop_check=1
+    stop tn_checksum_elabel
+    setprop persist.vendor.elabel.stop_check 0
+#TN End modify by linhong.han/860549 20231206 CR/EKFOGO4G-9172
+
+#TN Begin modify by bingtai.zou begin
+on property:persist.vendor.proxcal.status=1
+    write /sys/class/sensor/m_ps_misc/proxcali 1
+    setprop persist.vendor.proxcal.status 0
+#TN Begin modify by bingtai.zou end
